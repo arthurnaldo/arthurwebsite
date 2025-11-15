@@ -153,9 +153,3 @@ ul li+li {
 ul {
     list-style-type: none
 }
-
-.portfolio-link {color: #480a8b;
-    /* pick any color */
-    text-decoration: none;
-    /* optional */
-}
