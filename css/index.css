@@ -3,19 +3,19 @@
     font-weight: 400;
     src: url(../fonts/azeret-mono-v21-latin-regular.woff2) format("woff2");
     font-display: swap;
-    font-style: normal 
+    font-style: normal
 }
 
 :root {
     --width: 720px;
     --font-main: "Azeret Mono", sans-serif;
     --font-secondary: "Azeret Mono", sans-serif;
-    --font-scale: 1em; 
+    --font-scale: 1em;
     --background-color: #e8e8e8;
     --heading-color: #222;
     --text-color: #444;
     --link-color: #3273dc;
-    --visited-color: #8b6fcb; 
+    --visited-color: #8b6fcb;
     --code-background-color: #f2f2f2;
     --code-color: #222;
     --blockquote-color: #222;
@@ -42,7 +42,12 @@ body {
     color: var(--text-color)
 }
 
-h1,h2,h3,h4,h5,h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
     font-family: var(--font-main);
     color: var(--heading-color)
 }
@@ -65,7 +70,8 @@ nav a {
     margin-right: 8px
 }
 
-strong,b {
+strong,
+b {
     color: var(--heading-color)
 }
 
@@ -126,21 +132,30 @@ footer {
 }
 
 .inline {
-    width: auto!important
+    width: auto !important
 }
 
-.highlight,.code {
+.highlight,
+.code {
     padding: 1px 15px;
     background-color: var(--code-background-color);
     color: var(--code-color);
     border-radius: 3px;
-    margin-block-start:1em;margin-block-end:1em;overflow-x: auto
+    margin-block-start: 1em;
+    margin-block-end: 1em;
+    overflow-x: auto
 }
 
-ul li + li {
+ul li+li {
     margin-top: 10px;
 }
 
 ul {
     list-style-type: none
+}
+
+.portfolio-link {color: #480a8b;
+    /* pick any color */
+    text-decoration: none;
+    /* optional */
 }
