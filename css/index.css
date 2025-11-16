@@ -146,6 +146,15 @@ footer {
     overflow-x: auto
 }
 
+.header {
+    text-decoration: underline;
+}
+
+.description {
+    padding-left: 20px;
+    margin-bottom: 20px;
+}
+
 ul li+li {
     margin-top: 10px;
 }

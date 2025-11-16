@@ -1,20 +1,52 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <title>My Work</title>
-        <link rel="icon" type="image/x-icon" href="image/graph.png" />
-        <link rel="preload" href="/fonts/azeret-mono-v18-latin-regular.woff2" as="font" type="font/woff2" crossorigin>
-        <script defer src="/_vercel/insights/script.js"></script>
-      <link rel="stylesheet" href="css/index.css">
-    </head>
-    <body>
-        <header>
-            <h1>Portfolio</h1>
-        </header>
-        <br />
-        <div class="vert">
-            <text>I’ll be updating this page regularly with my favorite projects and what I’m building.</text>
-        </div>
-    
+
+<head>
+    <meta charset="UTF-8" />
+    <title>My Work</title>
+    <link rel="icon" type="image/x-icon" href="image/graph.png" />
+    <link rel="preload" href="/fonts/azeret-mono-v18-latin-regular.woff2" as="font" type="font/woff2" crossorigin>
+    <script defer src="/_vercel/insights/script.js"></script>
+    <link rel="stylesheet" href="css/index.css">
+</head>
+
+<body>
+    <header>
+        <h1>Portfolio</h1>
+    </header>
+    <div class="header">
+        <header>Discord Social Network Visualizer</header>
+    </div>
+    <div class="description">
+        <p>
+            This project visualizes how users interact inside Discord servers by mapping their messages and
+            relationships as a real-time graph.
+        </p>
+
+        <p>
+            I originally built this last year using Postgres, but it quickly became clear that relational databases
+            aren’t ideal for modeling large, highly connected networks.
+            Storing massive adjacency lists gets slow and hard to scale once users have thousands of interactions.
+        </p>
+
+        <p>
+            After learning more about graph databases, I rebuilt the entire system using Neo4j. Graph databases are a
+            much better fit because they represent relationships
+            through nodes and edges, which makes dense interactions easy to store and fast to query. Complex joins that
+            would be painful in SQL become simple Cypher queries.
+        </p>
+
+        <p>
+            The backend is written in Go. It listens to Discord events through discordgo, streams new messages into
+            Neo4j, and updates the graph visualization as interactions grow.
+        </p>
+
+        <p>
+            I’ll be posting the final website on my portfolio soon. In the meantime, the full source code is available
+            here:
+            <a href="https://github.com/arthurnaldo/SocialNetworkNeo4j" target="_blank">GitHub Repository</a>.
+        </p>
+    </div>
+
+
 </html>
