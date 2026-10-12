@@ -281,9 +281,10 @@ for each video A:
     <h3>The tool</h3>
     <p>
         The whole thing is a small Python package with the C++ kernel inside, <code>provena-audit</code>
-        (MIT licence). It's on <a href="https://test.pypi.org/project/provena-audit/">TestPyPI</a> for now:
+        (MIT licence), on <a href="https://pypi.org/project/provena-audit/">PyPI</a>:
     </p>
 <pre>
+pip install provena-audit
 provena-audit fingerprint ./videos        # runs where the videos are; only fingerprints leave
 provena-audit audit provena_send/         # -> pairs.csv: which videos share footage, and where
 provena-audit lookup clip.mp4 --index provena_send/
