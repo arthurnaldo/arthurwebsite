@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>I built reverse video search for AI training data</title>
+    <meta name="description" content="A C++ video fingerprinting engine that searches 1M AI training clips in 0.35 s, and what it found in OpenVid-1M." />
+    <link rel="icon" type="image/x-icon" href="image/graph.png" />
+    <link rel="preload" href="/fonts/azeret-mono-v18-latin-regular.woff2" as="font" type="font/woff2" crossorigin>
+    <script defer src="/_vercel/insights/script.js"></script>
+    <link rel="stylesheet" href="css/index.css">
+    <style>
+        figure { margin: 24px 0; }
+        figcaption { font-size: 0.85em; margin-top: 6px; }
+        table { border-collapse: collapse; font-size: 0.9em; margin: 12px 0; }
+        th, td { text-align: left; padding: 4px 8px; border-bottom: 1px dashed #999; }
+        td.n, th.n { text-align: right; }
+        pre { white-space: pre; overflow-x: auto; font-size: 0.85em; }
+        .meta { font-size: 0.85em; }
+    </style>
+</head>
+
+<body>
+    <header>
+        <a href="projects.html">&larr; Portfolio</a>
+    </header>
+
+    <h2>I built reverse video search for AI training data</h2>
+    <p><em>...and found 156 hours of duplicate footage in a 1M-clip dataset.</em></p>
+    <p class="meta">October 2026 &middot; Provena</p>
+
+    <p>
+        Give it any video clip and, in about a third of a second, it tells you whether that footage is inside a
+        1-million-clip AI training dataset, and exactly which seconds match. Trimmed, re-encoded, resized, shifted
+        and lightly recoloured copies still match. It never stores the video itself, just small fingerprints.
+    </p>
+    <p>
+        Then I turned it on the dataset itself, comparing every clip with every other, to see how much of
+        <a href="https://huggingface.co/datasets/nkp37/OpenVid-1M">OpenVid-1M</a>, a popular open text-to-video
+        dataset, is the same footage over and over. A model trained on it sees that footage again and again, and
+        whoever pays for data like this pays for it more than once.
+    </p>
+
+    <div class="code">
+        <p>
+            <strong>OpenVid-1M: 1,019,956 clips, 2,051 hours.</strong><br />
+            With enough machines in parallel:<br />
+            &nbsp;&nbsp;~20 min to fingerprint the whole dataset<br />
+            &nbsp;&nbsp;~10 min to compare every clip with every other<br />
+            &nbsp;&nbsp;~0.5 s to look up one clip against all of it (on a laptop)<br />
+            156 hours (7.6%) are duplicate or near-duplicate footage.<br />
+            Stock part: ~44% of 266 h. YouTube part: ~2% of 1,728 h. Total compute: roughly $10-12.
+        </p>
+    </div>
+
+    <h3>The idea</h3>
+    <p>
+        I started this project (Provena) wanting to answer "where did this video come from?": given a clip, find
+        earlier copies, which part of which video it matches, and what changed. It works on whole clips, not single
+        images, so trimmed, re-encoded, resized and time-shifted copies still match. It stores small fingerprints,
+        never the video itself.
+    </p>
+    <p>
+        Training datasets turned out to be the most concrete place to point it: they're big, public, and nobody
+        checks them frame by frame.
+    </p>
+
+    <h3>How it works</h3>
+    <p>
+        Every quarter of a second, I take a <a href="https://github.com/facebook/ThreatExchange/tree/main/pdq">PDQ</a>
+        hash of the frame: 256 bits describing its overall layout of light and dark (Meta's open perceptual hash).
+        Two frames are "the same" if their hashes differ in at most 31 bits. Counting differing bits is an XOR and a
+        popcount, which CPUs do absurdly fast.
+    </p>
+    <p>
+        One matching frame proves little; lots of footage looks alike. So matching frames <em>vote</em>: each match
+        says "the frame at 2 s in A appears at 7 s in B", i.e. B is A shifted by 5 seconds. A real copy produces
+        many votes for the same shift; a look-alike scatters its votes across many shifts.
+    </p>
+<pre>
+real copy:     shift 5 s  ████████████   12 frames agree  -> copy
+look-alike:    shift -3 █  0 █  2 ██  5 █  7 █   scattered -> not a copy
+</pre>
+    <p>
+        Eight or more distinct frames agreeing on one shift (give or take a second) is a copy. That gives not just
+        "these two videos match" but exactly which seconds.
+    </p>
+
+    <h3>Version one: Python, FAISS, 64 GB machines</h3>
+    <p>
+        The first version used FAISS to find each frame's 100 nearest neighbours, wrote every match into one big
+        list, then sorted the list in numpy to count votes. I used it to audit the 359,513 stock clips of OpenVid
+        (Pixabay, Pexels, Mixkit; ~266 h) and published a
+        <a href="https://huggingface.co/datasets/arthur-nn/openvid-stock-dedup">clean keep/drop list</a>:
+        about 23% of the stock footage was duplicate, mostly the same video listed under several category names,
+        plus ~3% hidden duplicates under different IDs. I checked 60 random hidden pairs by eye; all 60 were the
+        same footage, including recoloured copies, time-shifted cuts and partial overlaps.
+    </p>
+    <figure>
+        <img src="image/provena/zebras.jpg" alt="Two stock clips of zebras by a pond, the same footage shifted in time" loading="lazy" />
+        <figcaption>Two clips with different IDs: the same footage, one cut a few seconds later.</figcaption>
+    </figure>
+    <figure>
+        <img src="image/provena/fountain.jpg" alt="Two stock clips of a frog fountain, overlapping footage" loading="lazy" />
+        <figcaption>Partial overlap: the two clips share only part of their footage.</figcaption>
+    </figure>
+    <p>Some things I learned the hard way:</p>
+    <ul>
+        <li>
+            - <strong>Sampling phase matters.</strong> Hashing stored videos once per second, a clip cut half a
+            second off that grid matched 0 of 20 frames. Every quarter second fixed it.
+        </li>
+        <li>
+            - <strong>PDQ must see the full-size frame.</strong> Hashing a pre-shrunk frame changed ~20 of 256 bits.
+        </li>
+        <li>
+            - <strong>Thumbnails lie.</strong> Two different moments of a static scene look identical at 400 px. I
+            only trust checks done on full-size frames, lined up on the matched second.
+        </li>
+        <li>
+            - <strong>Learned embeddings find more, but not cleanly.</strong> Meta's SSCD model catches crops and
+            mirrors that PDQ misses, but its scores can't separate an edited copy from a different moment of the
+            same scene.
+        </li>
+    </ul>
+
+    <h3>Version two: a C++ kernel that votes while searching</h3>
+    <p>
+        Version one had three problems. The top-100 cap meant a real copy could be pushed out by look-alike frames
+        (static shots fill the 100 slots). The match list grew with every match, so big runs needed big memory.
+        And scaling to all of OpenVid-1M (~30M frames) needed something leaner.
+    </p>
+    <p>
+        So I rewrote the core in C++ (exposed to Python with nanobind). Instead of saving matches and sorting them
+        later, each query video keeps a small scoreboard of (other video, shift) &rarr; votes. A match is counted
+        the moment it's found and then forgotten, so there's no cap and no giant list.
+    </p>
+<pre>
+for each video A:
+    scoreboard = {}
+    for each frame f of A, for each stored frame g of a later video:
+        if popcount(f XOR g) <= 31:
+            vote for (video of g, shift) and its two neighbouring shifts,
+            at most once per frame of A
+    every shift with 8+ votes is a copy; repeats at other shifts count too
+</pre>
+    <p>Along the way:</p>
+    <ul>
+        <li>
+            - I found that the old vote counting <strong>double-counted</strong> frames that landed in two
+            neighbouring shift buckets, so "8 votes" sometimes meant 4-5 frames. The new counting is honest.
+        </li>
+        <li>
+            - <strong>Comparing each pair of videos only once</strong> (A against later videos) made it 2.15x faster
+            for 0.9% fewer pairs.
+        </li>
+        <li>
+            - On the same data, the new kernel was ~1.9x faster than the old FAISS path and used ~5x less working
+            memory; the full stock audit ran on my laptop in 33 minutes in 1.9 GB.
+        </li>
+        <li>
+            - Decoding with PyAV instead of an ffmpeg subprocess per clip made fingerprinting 2.5x faster on short
+            clips, with hashes identical to before (I matched ffmpeg's frame-picking rules exactly, down to how it
+            handles the last frame).
+        </li>
+        <li>
+            - The audit can be split across machines (<code>--part i --of N</code>) and combined; split runs give
+            exactly the same pairs as one run.
+        </li>
+    </ul>
+
+    <h3>Running all of OpenVid-1M</h3>
+    <p>
+        OpenVid-1M is ~7.5 TB in 186 zip files on Hugging Face. Each cloud machine streams one zip (parallel range
+        requests, read in order), fingerprints clips as they arrive and writes ~1 MB fingerprint files to S3. Testing
+        machine sizes showed downloads, not CPUs, were the limit, so small 4-CPU machines were the cheapest.
+    </p>
+    <p>
+        The first full run on Modal stopped halfway when the account hit its monthly spend cap, so I moved to AWS spot
+        instances: 24 Graviton machines fingerprinted everything in ~4.4 hours, then 37 machines ran the all-against-all
+        audit in ~1.2 hours. Total cost was roughly $10-12. The fingerprints for the whole dataset are 1.3 GB.
+    </p>
+    <p>
+        Those times were set by my AWS account's limits on how many machines can run at once, not by the work.
+        Both steps split cleanly. With one 8-CPU machine per zip, fingerprinting takes as long as the slowest zip
+        (~20 minutes); the comparison is ~37 machine-hours of work, so ~400 machines starting from a ready-made image
+        finish it in ~10 minutes. The total cost stays about the same, since it's the same amount of machine time.
+    </p>
+
+    <h3>What it found</h3>
+    <table>
+        <tr><th>Part of OpenVid-1M</th><th class="n">Footage</th><th class="n">Duplicate</th><th class="n">Share</th></tr>
+        <tr><td>Pixabay</td><td class="n">211 h</td><td class="n">106 h</td><td class="n">50%</td></tr>
+        <tr><td>Pexels</td><td class="n">50 h</td><td class="n">10 h</td><td class="n">20%</td></tr>
+        <tr><td>Mixkit</td><td class="n">5 h</td><td class="n">2 h</td><td class="n">35%</td></tr>
+        <tr><td>YouTube</td><td class="n">1,728 h</td><td class="n">36 h</td><td class="n">2%</td></tr>
+        <tr><td>CelebV</td><td class="n">56 h</td><td class="n">1 h</td><td class="n">2%</td></tr>
+        <tr><td><strong>All</strong></td><td class="n"><strong>2,051 h</strong></td><td class="n"><strong>156 h</strong></td><td class="n"><strong>7.6%</strong></td></tr>
+    </table>
+    <p>
+        When two clips share footage, only the shorter one's matched seconds count as duplicate, with overlaps
+        merged, so nothing is counted twice. The stock share (~44%) is higher than version one's 23% because version
+        two also compares different segments of the same source video (version one skipped those) and has no
+        top-100 cap. Leaving those segments out, the stock duplicates come to ~60-65 h, in line with version one.
+    </p>
+    <p>
+        The duplicates come from three different places:
+    </p>
+    <ul>
+        <li>
+            - <strong>Segments of one source matching each other</strong> (84 h): long, mostly static stock videos
+            cut into many near-identical clips.
+        </li>
+        <li>
+            - <strong>The same video listed under several names</strong> (54 h): one stock video filed under
+            "beaches", "sunsets" and "seascapes".
+        </li>
+        <li>
+            - <strong>The same footage in different source videos</strong> (41 h): on the YouTube side, cartoon
+            compilations, segments uploaded twice, and identical channel end screens. Nothing in the metadata
+            reveals these; only the fingerprints do.
+        </li>
+    </ul>
+    <figure>
+        <img src="image/provena/river.jpg" alt="Frames from two stock clips with different IDs showing the same river footage" loading="lazy" />
+        <figcaption>A hidden duplicate: two clips with different IDs, the same river footage (top row vs bottom row).</figcaption>
+    </figure>
+    <figure>
+        <img src="image/provena/recolour.jpg" alt="An animated forest cabin and a darker, bluer copy of the same animation" loading="lazy" />
+        <figcaption>A recoloured copy: the same animation, made darker and bluer (top vs bottom).</figcaption>
+    </figure>
+    <p>
+        What counts as a "duplicate" took some thought. Some matches are the same tripod shot a few seconds apart, or
+        the same AI-made scene with different birds flying past. Not literally the same footage, but redundant
+        for training, so I count them and call the result "duplicate or near-duplicate footage". I checked samples
+        by eye at full size: on the YouTube side ~13 of 14 different-video pairs were the same or redundant footage,
+        and 5 of 5 on the CelebV side. Those are small samples, so I treat them as a sanity check, not a measured
+        precision.
+    </p>
+    <figure>
+        <img src="image/provena/rice.jpg" alt="Frames from two stock clips showing the same mountain and rice field" loading="lazy" />
+        <figcaption>Two clips with different IDs and the same footage (top row vs bottom row).</figcaption>
+    </figure>
+
+    <h3>Looking up a single clip</h3>
+    <p>
+        The same kernel also answers "where does this clip appear?". Searching one clip against all 1.02M clips
+        (29.7M frames) takes about 0.35 seconds on my laptop, fingerprinting included. I tested it with 10 random
+        OpenVid clips, each edited four ways:
+    </p>
+    <table>
+        <tr><th>Edit</th><th class="n">Found</th></tr>
+        <tr><td>Trimmed</td><td class="n">8-9 / 10</td></tr>
+        <tr><td>Half size + heavy compression</td><td class="n">9 / 10</td></tr>
+        <tr><td>Caption bar burned in</td><td class="n">7 / 10</td></tr>
+        <tr><td>Mirrored</td><td class="n">0 / 10</td></tr>
+        <tr><td>Unrelated videos (not in the dataset)</td><td class="n">0 false matches</td></tr>
+    </table>
+    <p>
+        One rainbow clip came back with 55 other copies in the dataset, which makes the duplicate problem visible
+        from a single search.
+    </p>
+
+    <h3>Limits</h3>
+    <ul>
+        <li>
+            - <strong>The numbers are a floor.</strong> PDQ alone misses crops, mirrors and heavy overlays, so
+            edited copies of those kinds aren't counted. Adding SSCD embeddings (on GPUs) is the next step.
+        </li>
+        <li>
+            - <strong>Short, flat clips are hard.</strong> A 2.7-second stock clip has ~11 frames; a still sky gives
+            almost nothing to match on.
+        </li>
+        <li>
+            - <strong>Near-duplicates are a judgement call.</strong> I've tried to be precise about what's counted and
+            how it was checked.
+        </li>
+    </ul>
+
+    <h3>The tool</h3>
+    <p>
+        The whole thing is a small Python package with the C++ kernel inside, <code>provena-audit</code>
+        (MIT licence). It's on <a href="https://test.pypi.org/project/provena-audit/">TestPyPI</a> for now:
+    </p>
+<pre>
+provena-audit fingerprint ./videos        # runs where the videos are; only fingerprints leave
+provena-audit audit provena_send/         # -> pairs.csv: which videos share footage, and where
+provena-audit lookup clip.mp4 --index provena_send/
+</pre>
+    <p>
+        Fingerprinting runs on the machine that has the videos and writes only hashes and timings under random IDs;
+        the file names stay in a private folder. Whoever runs the audit never sees the footage.
+    </p>
+
+    <h3>What I'd do next</h3>
+    <ul>
+        <li>- Add SSCD (on GPUs) and mirrored hashes, so crops, mirrors and overlays count too.</li>
+        <li>- Index other public video datasets and look for footage shared between them, and test clips leaking into training sets.</li>
+        <li>- Publish the fingerprints for all of OpenVid-1M (1.3 GB of PDQ hashes and timings, no video), so anyone
+            can search clips against the dataset or audit their own data against it with <code>provena-audit</code>.</li>
+        <li>- Publish the full keep/drop list for OpenVid-1M, like the stock one.</li>
+    </ul>
+    <br />
+</body>
+
+</html>
